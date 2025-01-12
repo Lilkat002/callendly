@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calendly Integration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .event-type {
+            background-color: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .available-slot {
+            background-color: #e8f4f8;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connect-button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #0069ff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .free-slots {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .free-slot {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .free-slot strong {
+            color: #2c5282;
+            font-size: 1.1em;
+        }
+        .free-slot p {
+            margin: 5px 0;
+            color: #4a5568;
+        }
+        select, button {
+            padding: 8px;
+            margin: 5px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #0069ff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0051cc;
+        }
+        .calendar-section {
+            margin-top: 30px;
+            border-top: 2px solid #eee;
+            padding-top: 20px;
+        }
+        .alternative-slot {
+            background-color: #fff3e0;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ff9800;
+        }
+        .time-diff {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .alternatives {
+            max-width: 600px;
+            margin: 20px 0;
+        }
+        .day-alternatives {
+            background-color: #f8f9fa;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .day-alternatives h4 {
+            margin: 0 0 15px 0;
+            color: #2d3748;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 8px;
+        }
+        .alternative-slot {
+            margin: 10px 0;
+            background-color: #fff;
+            border-left: 4px solid #ff9800;
+        }
+    </style>
+</head>
+<body>
+    <h1>Calendly Integration</h1>
+    
+    <!-- Auth section -->
+    <div id="auth-section">
+        <a href="/login" class="connect-button">Connect your Calendly account</a>
+    </div>
+
+    <!-- Matching section - Moved to top -->
+    <div class="section" id="matching-section" style="display: none;">
+        <h2>Match Availability with Another User</h2>
+        <div id="users-list">Loading users...</div>
+        <div id="matching-results"></div>
+    </div>
+
+    <!-- Calendar data section - Now below matching -->
+    <div id="calendar-data" class="calendar-section" style="display: none;">
+        Loading...
+    </div>
+
+    <script>
+        // Check authentication status
+        fetch('/availability')
+            .then(response => {
+                if (response.status === 302 || response.status === 400) {
+                    document.getElementById('auth-section').style.display = 'block';
+                    document.getElementById('calendar-data').style.display = 'none';
+                    document.getElementById('matching-section').style.display = 'none';
+                    throw new Error('Not authenticated');
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('auth-section').style.display = 'none';
+                document.getElementById('calendar-data').style.display = 'block';
+                document.getElementById('matching-section').style.display = 'block';
+                
+                const container = document.getElementById('calendar-data');
+                let html = `<h2>Your Available Times</h2>`;
+                
+                // Event Types and Available Times Section
+                html += `
+                    <div class="section">
+                        <h3>Available Meeting Types</h3>
+                        ${Object.entries(data.availability).map(([eventName, eventData]) => `
+                            <div class="event-type">
+                                <h4>${eventName}</h4>
+                                <h5>Available Times:</h5>
+                                <div class="free-slots">
+                                    ${eventData.collection.map(slot => `
+                                        <div class="free-slot">
+                                            <strong>${slot.local_time}</strong>
+                                            <p><a href="${slot.scheduling_url}" target="_blank">Schedule Meeting</a></p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                
+                container.innerHTML = html;
+            })
+            .catch(error => {
+                if (error.message !== 'Not authenticated') {
+                    console.error('Error:', error);
+                }
+            });
+
+        // Load users for matching
+        function loadUsers() {
+            fetch('/users')
+                .then(response => response.json())
+                .then(data => {
+                    const usersDiv = document.getElementById('users-list');
+                    if (data.users.length === 0) {
+                        usersDiv.innerHTML = '<p>No other users available for matching.</p>';
+                        return;
+                    }
+                    
+                    let html = '<h3>Select users to match:</h3>';
+                    html += '<select id="user1">' + 
+                        data.users.map(user => `<option value="${user}">${user}</option>`).join('') +
+                        '</select>';
+                    html += '<select id="user2">' + 
+                        data.users.map(user => `<option value="${user}">${user}</option>`).join('') +
+                        '</select>';
+                    html += '<button onclick="matchUsers()">Find Matching Times</button>';
+                    
+                    usersDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading users:', error);
+                    document.getElementById('users-list').innerHTML = 'Error loading users list.';
+                });
+        }
+
+        function matchUsers() {
+            const user1 = document.getElementById('user1').value;
+            const user2 = document.getElementById('user2').value;
+            
+            if (user1 === user2) {
+                alert('Please select different users');
+                return;
+            }
+            
+            const resultsDiv = document.getElementById('matching-results');
+            resultsDiv.innerHTML = '<p>Finding matching slots...</p>';
+            
+            fetch(`/match/${encodeURIComponent(user1)}/${encodeURIComponent(user2)}`)
+                .then(response => response.json())
+                .then(data => {
+                    let html = '';
+                    
+                    if (data.has_matching_slots) {
+                        html = `
+                            <h3>Matching Time Slots</h3>
+                            <h4>For ${data.user1} and ${data.user2}</h4>
+                            <div class="free-slots">
+                                ${data.matching_free_slots.map(slot => `
+                                    <div class="free-slot">
+                                        <strong>${slot.local_time}</strong>
+                                        <p>Duration: ${slot.duration_minutes} minutes</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    } else {
+                        html = `
+                            <h3>No Exact Matching Slots Found</h3>
+                            <h4>Closest Available Times by Day:</h4>
+                            <div class="alternatives">
+                                ${Object.entries(
+                                    data.closest_alternatives.reduce((acc, alt) => {
+                                        if (!acc[alt.date]) acc[alt.date] = [];
+                                        acc[alt.date].push(alt);
+                                        return acc;
+                                    }, {})
+                                ).map(([date, slots]) => `
+                                    <div class="day-alternatives">
+                                        <h4>${new Date(date).toLocaleDateString('en-US', {
+                                            weekday: 'long',
+                                            year: 'numeric',
+                                            month: 'long',
+                                            day: 'numeric'
+                                        })}</h4>
+                                        ${slots.map(alt => `
+                                            <div class="alternative-slot">
+                                                <p><strong>${data.user1}</strong>: ${alt.user1_slot.time}</p>
+                                                <p><strong>${data.user2}</strong>: ${alt.user2_slot.time}</p>
+                                                <p class="time-diff">Time difference: ${alt.time_difference_hours} hours</p>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+                    resultsDiv.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error matching users:', error);
+                    resultsDiv.innerHTML = 'Error finding matching times.';
+                });
+        }
+
+        // Load users when the page loads
+        loadUsers();
+    </script>
+</body>
+</html> 
